@@ -12,89 +12,40 @@ import (
 	"time"
 
 	"github.com/llgcode/draw2d/draw2dimg"
-	"github.com/llgcode/draw2d/draw2dkit"
 	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/stretchr/stew/slice"
 )
-
-type Circle struct {
-	center Vector2D
-	radius float64
-	color  color.RGBA
-}
-
-type CircleTree struct {
-	papa   *Circle
-	babies []*CircleTree
-}
 
 const (
 	randomTheta     = true
 	randomizeColors = false
 	depthJump       = 1
-	gridWidth       = 4
-	gridHeight      = 4
+	lineWidth       = 0.05 * dotsPerGrid
+	lineCount       = 8
+	gridWidth       = 10
+	gridHeight      = 10
 	dotsPerGrid     = 300
 	maxDepth        = 15
 	thetaIncrement  = 0.0
-	maxRadiusRatio  = 0.85
-	minRadiusRatio  = 0.55
 	increment       = 0.125 / 4.0
 	fillCircles     = false
 	jitter          = 0.0
 )
 
 var (
-	black           = color.RGBA{0x0, 0x0, 0x0, 0xff}
-	white           = color.RGBA{0xff, 0xff, 0xff, 0xff}
-	genPalette      = genPalette2
-	getCircleRadius = getCircleRadius1
-	getStrokeWidth  = getStrokeWidth1
-	palette         []colorful.Color
-	treeNum         = 0
+	black = color.RGBA{0x45, 0x15, 0x34, 0xff}
+	white = ToRGBA(MustParseHex("#9e0142"))
+	//.color.RGBA{0xa8, 0x25, 0xd5, 0xff}
+	genPalette = genPalette2
+	palette    []colorful.Color
+	treeNum    = 0
 )
 
 func init() {
-	// seed := time.Now().UnixNano()
-	rand.Seed(49)
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	// rand.Seed(49)
 	palette = genPalette(maxDepth) // colorful.WarmPalette(maxDepth)
-}
-
-func getStrokeWidth1(r float64) float64 {
-	return 2.0
-}
-
-func getCircleRadius1(r float64) float64 {
-	return r - 1.0
-}
-
-func getCircleRadius2(r float64) float64 {
-	return r * 0.75
-}
-
-func getStrokeWidth2(r float64) float64 {
-	return r * 0.3
-}
-
-func drawCircle(gc *draw2dimg.GraphicContext, c *Circle) {
-	var center = c.center
-	if jitter != 0.0 {
-		r := rand.Float64() * jitter * c.radius
-		angle := rand.Float64() * math.Pi * 2.0
-		center.x += math.Cos(angle) * r
-		center.y += math.Sin(angle) * r
-	}
-	gc.BeginPath()
-	if fillCircles {
-		gc.SetFillColor(c.color)
-		draw2dkit.Circle(gc, center.x, center.y, c.radius)
-		gc.Fill()
-	} else {
-		gc.SetStrokeColor(c.color)
-		gc.SetLineWidth(getStrokeWidth(c.radius))
-		draw2dkit.Circle(gc, center.x, center.y, getCircleRadius(c.radius))
-		gc.Stroke()
-	}
 }
 
 type GradientTable []struct {
@@ -205,22 +156,6 @@ func distance(a, b Vector2D) float64 {
 	return pointDistance(a.x, a.y, b.x, b.y)
 }
 
-func dist(a, b *Circle) float64 {
-	return pointDistance(a.center.x, a.center.y, b.center.x, b.center.y)
-}
-
-func calcMaxRadiusFrom(x, y float64, siblings []*CircleTree) float64 {
-	radius := 10000000.0
-	for _, sibling := range siblings {
-		siblingCenterDist := pointDistance(x, y, sibling.papa.center.x, sibling.papa.center.y)
-		if siblingCenterDist < sibling.papa.radius {
-			return 0.0
-		}
-		radius = min(radius, siblingCenterDist-sibling.papa.radius)
-	}
-	return radius
-}
-
 func sqr(x float64) float64 {
 	return x * x
 }
@@ -252,35 +187,8 @@ func randColor(depth int) color.RGBA {
 	}
 }
 
-func circlesIntersect(a, b *Circle) (Vector2D, Vector2D) {
-	r1_squared := sqr(a.radius)
-	r2_squared := sqr(b.radius)
-	R := distance(a.center, b.center)
-	R_squared := sqr(R)
-	base := add(
-		midpoint(a.center, b.center),
-		scale(
-			(r1_squared-r2_squared)/(2.0*R_squared),
-			sub(b.center, a.center)))
-	C := 0.5 * math.Sqrt(2.0*(r1_squared+r2_squared)/R_squared-sqr(r1_squared-r2_squared)/sqr(R_squared)-1.0)
-	offset := scale(C, Vector2D{b.center.y - a.center.y, a.center.x - b.center.x})
-	return add(base, offset), sub(base, offset)
-}
-
 func lerp(a, x0, x1 float64) float64 {
 	return (x1-x0)*a + x0
-}
-
-func getRadius(r float64) float64 {
-	return lerp(rand.Float64(), minRadiusRatio, maxRadiusRatio) * r
-}
-
-func getTheta(depth int) float64 {
-	if randomTheta {
-		return rand.Float64() * math.Pi * 2.0
-	} else {
-		return lerp(float64(depth)/float64(maxDepth), 0, math.Pi*2.0)
-	}
 }
 
 func max(x, y float64) float64 {
@@ -337,30 +245,6 @@ func midpoint(a, b Vector2D) Vector2D {
 	return scale(0.5, add(a, b))
 }
 
-func drawTree(gc *draw2dimg.GraphicContext, tree *CircleTree) {
-	if tree == nil {
-		return
-	}
-	drawCircle(gc, tree.papa)
-	for _, baby := range tree.babies {
-		drawTree(gc, baby)
-	}
-	// drawTree2(gc, tree)
-}
-
-func drawTree2(gc *draw2dimg.GraphicContext, tree *CircleTree) {
-	if tree == nil {
-		return
-	}
-	for _, baby := range tree.babies {
-		gc.MoveTo(tree.papa.center.x, tree.papa.center.y)
-		gc.LineTo(baby.papa.center.x, baby.papa.center.y)
-		gc.SetStrokeColor(color.RGBA{0x22, 0x77, 0x24, 0xff})
-		gc.SetLineWidth(2.0)
-		gc.Stroke()
-	}
-}
-
 func gridToImage(x, y float64) (float64, float64) {
 	return float64(x * dotsPerGrid), float64(y * dotsPerGrid)
 }
@@ -369,25 +253,15 @@ type Curve struct {
 	start, end string
 }
 
+type Stack struct {
+	gx, gy int
+	curves []Curve
+}
+
 func shuffle(rg []string) {
 	rand.Shuffle(len(rg), func(i, j int) {
 		rg[i], rg[j] = rg[j], rg[i]
 	})
-}
-
-func findOtherSide(side string) string {
-	var choices []string
-	if side == "t" {
-		choices = []string{"b", "l", "r"}
-	} else if side == "b" {
-		choices = []string{"t", "l", "r"}
-	} else if side == "r" {
-		choices = []string{"t", "l", "b"}
-	} else {
-		choices = []string{"t", "r", "b"}
-	}
-	shuffle(choices)
-	return choices[0]
 }
 
 func covering(start, end string) []string {
@@ -425,19 +299,22 @@ func removeCovering(uncovered []string, covered []string) []string {
 	return newUncovered
 }
 
-func buildTileStack(uncovered []string) []Curve {
-	stack := []Curve{}
+func buildTileStack(gx, gy int) Stack {
+	uncovered := allSides()
+	stack := Stack{}
+	stack.gx = gx
+	stack.gy = gy
+	stack.curves = []Curve{}
+	shuffle(uncovered)
 	for {
-		shuffle(uncovered)
-		start := uncovered[0]
-		uncovered = uncovered[1:]
-		end := findOtherSide(start)
+		start, end := uncovered[0], uncovered[1]
+		uncovered = uncovered[2:]
 		uncovered = removeCovering(uncovered, covering(start, end))
 		curve := Curve{start, end}
 		if start > end {
 			curve = Curve{end, start}
 		}
-		stack = append(stack, curve)
+		stack.curves = append(stack.curves, curve)
 		if len(uncovered) == 0 {
 			break
 		}
@@ -449,29 +326,22 @@ func allSides() []string {
 	return []string{"b", "t", "l", "r"}
 }
 
-func drawTile(gc *draw2dimg.GraphicContext, gx, gy int) {
-	stack := buildTileStack(allSides())
-	fmt.Printf("(%v, %v) %v\n", gx, gy, stack)
-	for i := range stack {
-		curve := stack[len(stack)-1-i]
-		drawCurve(gc, gx, gy, curve)
-	}
-}
-
 func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
 	gc.SetStrokeColor(black)
-	gc.SetLineWidth(5)
+	gc.SetLineWidth(lineWidth)
 	x := 0.0
 	y := 0.0
 	angle := 0.0
-	lineCount := 6
+	discount := 0.075
+	padding := discount * dotsPerGrid
 	if curve.start == "l" && curve.end == "r" {
 		// Horizontal
 		for i := 0.0; i <= float64(lineCount); i += 1.0 {
-			x, y = gridToImage(float64(gx), float64(gy)+i/float64(lineCount))
+			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+			x, y = gridToImage(float64(gx), float64(gy)+alpha)
 			gc.BeginPath()
 			gc.MoveTo(x, y)
-			x, y = gridToImage(float64(gx+1), float64(gy)+i/float64(lineCount))
+			x, y = gridToImage(float64(gx+1), float64(gy)+alpha)
 			gc.LineTo(x, y)
 			gc.Stroke()
 		}
@@ -479,11 +349,11 @@ func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
 	} else if curve.start == "b" && curve.end == "t" {
 		// Vertical
 		for i := 0.0; i <= float64(lineCount); i += 1.0 {
-			gc.SetFillColor(&color.RGBA{0xa0, 0xa0, 0xe0, 0xff})
-			x, y = gridToImage(float64(gx)+i/float64(lineCount), float64(gy))
+			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+			x, y = gridToImage(float64(gx)+alpha, float64(gy))
 			gc.BeginPath()
 			gc.MoveTo(x, y)
-			x, y = gridToImage(float64(gx)+i/float64(lineCount), float64(gy+1))
+			x, y = gridToImage(float64(gx)+alpha, float64(gy+1))
 			gc.LineTo(x, y)
 			gc.Stroke()
 		}
@@ -491,7 +361,7 @@ func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
 	} else if curve.start == "b" && curve.end == "l" {
 		// 6 to 9
 		x, y = gridToImage(float64(gx), float64(gy+1))
-		angle = math.Pi * 0.5
+		angle = -math.Pi * 0.5
 	} else if curve.start == "b" && curve.end == "r" {
 		// 6 to 3
 		x, y = gridToImage(float64(gx+1), float64(gy+1))
@@ -503,17 +373,27 @@ func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
 	} else if curve.start == "r" && curve.end == "t" {
 		// 3 to 12
 		x, y = gridToImage(float64(gx+1), float64(gy))
-		angle = -math.Pi * 0.5
+		angle = math.Pi * 0.5
 	}
+	// gc.SetFillColor(&color.RGBA{0xe0, 0xa0, 0xa0, 0xff})
+	for i := float64(lineCount); i >= 0.0; i -= 1.0 {
+		alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+		gc.BeginPath()
+		gc.MoveTo(x, y)
+		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle, math.Pi*0.5)
+		gc.Close()
+		gc.Fill()
 
-	gc.SetFillColor(&color.RGBA{0xe0, 0xa0, 0xa0, 0xff})
-	gc.BeginPath()
-	gc.MoveTo(x, y)
-	gc.ArcTo(x, y, dotsPerGrid*0.5, dotsPerGrid*0.5, angle, math.Pi*0.5)
-	gc.Close()
-	gc.Fill()
-	gc.ArcTo(x, y, dotsPerGrid*0.5, dotsPerGrid*0.5, angle, math.Pi*0.5)
-	gc.Stroke()
+		gc.SetLineWidth(padding * 2)
+		gc.SetStrokeColor(white)
+		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle, math.Pi*0.5)
+		gc.Stroke()
+		gc.SetLineWidth(lineWidth)
+		gc.SetStrokeColor(black)
+		extra := 0.02
+		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle-extra, math.Pi*0.5+extra*2.0)
+		gc.Stroke()
+	}
 }
 
 func main() {
@@ -533,9 +413,20 @@ func main() {
 	gc.Close()
 	gc.Fill()
 
+	stacks := []Stack{}
+
 	for y := 0; y < gridHeight; y++ {
 		for x := 0; x < gridWidth; x++ {
-			drawTile(gc, x, y)
+			stacks = append(stacks, buildTileStack(x, y))
+		}
+	}
+
+	// for i := 1; i >= 0; i -= 1 {
+	for i := 0; i < 2; i += 1 {
+		for _, stack := range stacks {
+			if len(stack.curves) > i {
+				drawCurve(gc, stack.gx, stack.gy, stack.curves[i])
+			}
 		}
 	}
 
