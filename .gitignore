@@ -1,0 +1,8 @@
+truchet
+pkg
+src
+bin
+*.png
+go.sum
+*.jpg
+tags
