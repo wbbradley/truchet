@@ -20,32 +20,30 @@ const (
 	randomTheta     = true
 	randomizeColors = false
 	depthJump       = 1
-	lineWidth       = 0.05 * dotsPerGrid
-	lineCount       = 8
-	gridWidth       = 10
+	lineWidth       = 0.15 * dotsPerGrid
+	lineCount       = 3
+	gridWidth       = 16
 	gridHeight      = 10
-	dotsPerGrid     = 300
+	dotsPerGrid     = 500
 	maxDepth        = 15
 	thetaIncrement  = 0.0
 	increment       = 0.125 / 4.0
 	fillCircles     = false
 	jitter          = 0.0
+	extra           = 0.02
 )
 
 var (
-	black = color.RGBA{0x45, 0x15, 0x34, 0xff}
-	white = ToRGBA(MustParseHex("#9e0142"))
-	//.color.RGBA{0xa8, 0x25, 0xd5, 0xff}
-	genPalette = genPalette2
-	palette    []colorful.Color
-	treeNum    = 0
+	strokeColor = color.RGBA{0x05, 0x05, 0x04, 0xff}
+	fillColor   = color.RGBA{0x35, 0x55, 0x65, 0xff}
+	genPalette  = genPalette2
+	palette     []colorful.Color
+	treeNum     = 0
 )
 
 func init() {
 	seed := time.Now().UnixNano()
 	rand.Seed(seed)
-	// rand.Seed(49)
-	palette = genPalette(maxDepth) // colorful.WarmPalette(maxDepth)
 }
 
 type GradientTable []struct {
@@ -327,7 +325,7 @@ func allSides() []string {
 }
 
 func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
-	gc.SetStrokeColor(black)
+	gc.SetStrokeColor(strokeColor)
 	gc.SetLineWidth(lineWidth)
 	x := 0.0
 	y := 0.0
@@ -385,12 +383,11 @@ func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
 		gc.Fill()
 
 		gc.SetLineWidth(padding * 2)
-		gc.SetStrokeColor(white)
+		gc.SetStrokeColor(fillColor)
 		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle, math.Pi*0.5)
 		gc.Stroke()
 		gc.SetLineWidth(lineWidth)
-		gc.SetStrokeColor(black)
-		extra := 0.02
+		gc.SetStrokeColor(strokeColor)
 		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle-extra, math.Pi*0.5+extra*2.0)
 		gc.Stroke()
 	}
@@ -404,7 +401,7 @@ func main() {
 	gc := draw2dimg.NewGraphicContext(dest)
 
 	// Clear the background
-	gc.SetFillColor(white)
+	gc.SetFillColor(fillColor)
 	gc.BeginPath()
 	gc.MoveTo(0, 0)
 	gc.LineTo(width, 0)
