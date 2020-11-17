@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/jpeg"
 	"math"
 	"math/rand"
@@ -12,34 +13,39 @@ import (
 	"time"
 
 	"github.com/llgcode/draw2d/draw2dimg"
+	"github.com/llgcode/draw2d/draw2dkit"
 	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/stretchr/stew/slice"
+	// "golang.org/x/image/draw"
 )
 
 const (
-	randomTheta     = true
-	randomizeColors = false
-	depthJump       = 1
-	lineWidth       = 0.15 * dotsPerGrid
-	lineCount       = 3
-	gridWidth       = 16
-	gridHeight      = 10
-	dotsPerGrid     = 500
-	maxDepth        = 15
-	thetaIncrement  = 0.0
-	increment       = 0.125 / 4.0
-	fillCircles     = false
-	jitter          = 0.0
-	extra           = 0.02
+	randomTheta      = true
+	randomizeColors  = false
+	depthJump        = 1
+	lineCount        = 3
+	gridWidth        = 10
+	gridHeight       = 10
+	dotsPerGrid      = 180
+	opaqueBackground = false
 )
 
 var (
-	strokeColor = color.RGBA{0x05, 0x05, 0x04, 0xff}
-	fillColor   = color.RGBA{0x35, 0x55, 0x65, 0xff}
-	genPalette  = genPalette2
-	palette     []colorful.Color
-	treeNum     = 0
+	white          = color.RGBA{0xff, 0xff, 0xff, 0xff}
+	strokeColor    = color.RGBA{84, 50, 3, 255}
+	fillColor      = color.RGBA{0x05, 0x05, 0x04, 0xff}
+	lineWidthRatio = 0.15
+	paddingRatio   = getPaddingRatio()
+	discount       = paddingRatio + 0.5*lineWidthRatio
 )
+
+func getPaddingRatio() float64 {
+	if opaqueBackground {
+		return lineWidthRatio * 0.5
+	} else {
+		return 0.0
+	}
+}
 
 func init() {
 	seed := time.Now().UnixNano()
@@ -51,107 +57,12 @@ type GradientTable []struct {
 	Pos float64
 }
 
-func genPalette1(d int) []colorful.Color {
-	hue := rand.Float64() * 360.0
-	return []colorful.Color{
-		colorful.Color{
-			R: 1.0,
-			G: 1.0,
-			B: 1.0,
-		},
-		colorful.Hsv(hue, 0.3, 0.9),
-	}
-}
-func genPalette5(d int) []colorful.Color {
-	hue := rand.Float64() * 360.0
-	return []colorful.Color{
-		colorful.Hsv(hue, 0.7, 0.95),
-	}
-}
-func genPalette2(d int) []colorful.Color {
-	hue := rand.Float64() * 360.0
-	keypoints := GradientTable{
-		{colorful.Hsv(hue, 0.3, 0.9), 0.0},
-		{colorful.Hsv(hue, 0.3, 0.4), 0.25},
-		{colorful.Hsv(hue, 0.05, 1.0), 0.5},
-		{colorful.Hsv(hue, 0.3, 0.4), 0.75},
-		{colorful.Hsv(hue, 0.2, 0.3), 1.0},
-	}
-	p := make([]colorful.Color, 0, d)
-	for i := 0; i < d; i++ {
-		p = append(p, keypoints.GetInterpolatedColorFor(float64(i)/float64(d)))
-	}
-
-	return p
-}
-
-func genPalette3(d int) []colorful.Color {
-	keypoints := GradientTable{
-		{MustParseHex("#9e0142"), 0.0},
-		{MustParseHex("#d53e4f"), 0.1},
-		{MustParseHex("#f46d43"), 0.2},
-		{MustParseHex("#fdae61"), 0.3},
-		{MustParseHex("#fee090"), 0.4},
-		{MustParseHex("#ffffbf"), 0.5},
-		{MustParseHex("#e6f598"), 0.6},
-		{MustParseHex("#abdda4"), 0.7},
-		{MustParseHex("#66c2a5"), 0.8},
-		{MustParseHex("#3288bd"), 0.9},
-		{MustParseHex("#5e4fa2"), 1.0},
-	}
-	p := make([]colorful.Color, 0, d)
-	for i := 0; i < d; i++ {
-		p = append(p, keypoints.GetInterpolatedColorFor(float64(i)/float64(d)))
-	}
-
-	return p
-}
-
-func genPalette4(d int) []colorful.Color {
-	keypoints := GradientTable{
-		{MustParseHex("#fe8282"), 0.0},
-		{MustParseHex("#fe6262"), 0.3},
-		{MustParseHex("#eeebee"), 0.5},
-		{MustParseHex("#fe6262"), 0.8},
-		{MustParseHex("#eeebee"), 1.0},
-	}
-	p := make([]colorful.Color, 0, d)
-	for i := 0; i < d; i++ {
-		p = append(p, keypoints.GetInterpolatedColorFor(float64(i)/float64(d)))
-	}
-
-	return p
-}
-
 func MustParseHex(s string) colorful.Color {
 	c, err := colorful.Hex(s)
 	if err != nil {
 		panic("MustParseHex: " + err.Error())
 	}
 	return c
-}
-
-func (self GradientTable) GetInterpolatedColorFor(t float64) colorful.Color {
-	for i := 0; i < len(self)-1; i++ {
-		c1 := self[i]
-		c2 := self[i+1]
-		if c1.Pos <= t && t <= c2.Pos {
-			// We are in between c1 and c2. Go blend them!
-			t := (t - c1.Pos) / (c2.Pos - c1.Pos)
-			return c1.Col.BlendHcl(c2.Col, t).Clamped()
-		}
-	}
-
-	// Nothing found? Means we're at (or past) the last gradient keypoint.
-	return self[len(self)-1].Col
-}
-
-func pointDistance(x1, y1, x2, y2 float64) float64 {
-	return math.Sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2))
-}
-
-func distance(a, b Vector2D) float64 {
-	return pointDistance(a.x, a.y, b.x, b.y)
 }
 
 func sqr(x float64) float64 {
@@ -174,14 +85,6 @@ func ToRGBA(c colorful.Color) color.RGBA {
 		uint8(c.G * 255.0),
 		uint8(c.B * 255.0),
 		0xff,
-	}
-}
-
-func randColor(depth int) color.RGBA {
-	if randomizeColors {
-		return HSVtoRGBA(rand.Float64()*360.0, 0.5, 0.9)
-	} else {
-		return ToRGBA(palette[depth%len(palette)])
 	}
 }
 
@@ -324,79 +227,105 @@ func allSides() []string {
 	return []string{"b", "t", "l", "r"}
 }
 
-func drawCurve(gc *draw2dimg.GraphicContext, gx, gy int, curve Curve) {
-	gc.SetStrokeColor(strokeColor)
-	gc.SetLineWidth(lineWidth)
+func drawCurve(gc *draw2dimg.GraphicContext, dest *image.RGBA, cache map[string]*image.RGBA, gx, gy int, curve Curve) {
+	curve_key := fmt.Sprintf("%v", curve)
+	img, ok := cache[curve_key]
+	if !ok {
+		img = renderCachedCurve(curve)
+		fmt.Printf("Rendered cache curve: %v\n", curve)
+		cache[curve_key] = img
+	}
+	r := image.Rectangle{
+		Min: image.Point{gx * dotsPerGrid, gy * dotsPerGrid},
+		Max: image.Point{(gx + 1) * dotsPerGrid, (gy + 1) * dotsPerGrid},
+	}
+	draw.Draw(dest, r, img, image.Point{0, 0}, draw.Over)
+}
+
+func renderCachedCurve(curve Curve) *image.RGBA {
+	dest := image.NewRGBA(image.Rect(0, 0, dotsPerGrid, dotsPerGrid))
+	gc := draw2dimg.NewGraphicContext(dest)
 	x := 0.0
 	y := 0.0
-	angle := 0.0
-	discount := 0.075
-	padding := discount * dotsPerGrid
 	if curve.start == "l" && curve.end == "r" {
 		// Horizontal
 		for i := 0.0; i <= float64(lineCount); i += 1.0 {
 			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
-			x, y = gridToImage(float64(gx), float64(gy)+alpha)
+			x, y = gridToImage(0.0, alpha)
 			gc.BeginPath()
 			gc.MoveTo(x, y)
-			x, y = gridToImage(float64(gx+1), float64(gy)+alpha)
+			x, y = gridToImage(1.0, alpha)
 			gc.LineTo(x, y)
+
+			gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
+			gc.SetStrokeColor(strokeColor)
 			gc.Stroke()
 		}
-		return
+		return dest
 	} else if curve.start == "b" && curve.end == "t" {
 		// Vertical
 		for i := 0.0; i <= float64(lineCount); i += 1.0 {
 			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
-			x, y = gridToImage(float64(gx)+alpha, float64(gy))
+			x, y = gridToImage(alpha, 0.0)
 			gc.BeginPath()
 			gc.MoveTo(x, y)
-			x, y = gridToImage(float64(gx)+alpha, float64(gy+1))
+			x, y = gridToImage(alpha, 1.0)
 			gc.LineTo(x, y)
+
+			gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
+			gc.SetStrokeColor(strokeColor)
 			gc.Stroke()
 		}
-		return
+		return dest
 	} else if curve.start == "b" && curve.end == "l" {
 		// 6 to 9
-		x, y = gridToImage(float64(gx), float64(gy+1))
-		angle = -math.Pi * 0.5
+		x, y = gridToImage(0, 1)
 	} else if curve.start == "b" && curve.end == "r" {
 		// 6 to 3
-		x, y = gridToImage(float64(gx+1), float64(gy+1))
-		angle = -math.Pi
+		x, y = gridToImage(1, 1)
 	} else if curve.start == "l" && curve.end == "t" {
 		// 9 to 12
-		x, y = gridToImage(float64(gx), float64(gy))
-		angle = 0.0
+		x, y = gridToImage(0, 0)
 	} else if curve.start == "r" && curve.end == "t" {
 		// 3 to 12
-		x, y = gridToImage(float64(gx+1), float64(gy))
-		angle = math.Pi * 0.5
+		x, y = gridToImage(1, 0)
 	}
-	// gc.SetFillColor(&color.RGBA{0xe0, 0xa0, 0xa0, 0xff})
+	if opaqueBackground {
+		gc.SetFillColor(fillColor)
+		draw2dkit.Circle(gc, x, y, dotsPerGrid*(1.0-discount))
+		gc.Fill()
+	}
+
 	for i := float64(lineCount); i >= 0.0; i -= 1.0 {
 		alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
-		gc.BeginPath()
-		gc.MoveTo(x, y)
-		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle, math.Pi*0.5)
-		gc.Close()
-		gc.Fill()
 
-		gc.SetLineWidth(padding * 2)
-		gc.SetStrokeColor(fillColor)
-		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle, math.Pi*0.5)
-		gc.Stroke()
-		gc.SetLineWidth(lineWidth)
+		if opaqueBackground {
+			gc.SetLineWidth(dotsPerGrid * (lineWidthRatio + 2*paddingRatio))
+			draw2dkit.Circle(gc, x, y, dotsPerGrid*alpha)
+
+			gc.SetStrokeColor(fillColor)
+			gc.Stroke()
+		}
+
+		draw2dkit.Circle(gc, x, y, dotsPerGrid*alpha)
+
+		gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
 		gc.SetStrokeColor(strokeColor)
-		gc.ArcTo(x, y, dotsPerGrid*alpha, dotsPerGrid*alpha, angle-extra, math.Pi*0.5+extra*2.0)
 		gc.Stroke()
 	}
+	return dest
 }
 
 func main() {
+	alpha1 := lerp(0/float64(lineCount), discount, 1.0-discount)
+	alpha2 := lerp(1/float64(lineCount), discount, 1.0-discount)
+	if alpha2-alpha1 <= lineWidthRatio {
+		panic(fmt.Sprintf("Not enough space between lines.\nSpace used by lines = %v", lineWidthRatio*lineCount))
+	}
 	width, height := gridToImage(gridWidth, gridHeight)
 
 	// Initialize the graphic context on an RGBA image
+	fmt.Printf("dest is %v, %v\n", width, height)
 	dest := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 	gc := draw2dimg.NewGraphicContext(dest)
 
@@ -418,11 +347,13 @@ func main() {
 		}
 	}
 
+	cache := map[string]*image.RGBA{}
+
 	// for i := 1; i >= 0; i -= 1 {
 	for i := 0; i < 2; i += 1 {
 		for _, stack := range stacks {
 			if len(stack.curves) > i {
-				drawCurve(gc, stack.gx, stack.gy, stack.curves[i])
+				drawCurve(gc, dest, cache, stack.gx, stack.gy, stack.curves[i])
 			}
 		}
 	}
