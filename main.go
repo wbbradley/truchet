@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"image"
-	"image/color"
 	"image/draw"
 	"image/jpeg"
 	"math"
@@ -16,7 +15,9 @@ import (
 	"github.com/llgcode/draw2d/draw2dkit"
 	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/stretchr/stew/slice"
+
 	// "golang.org/x/image/draw"
+	"github.com/muesli/gamut"
 )
 
 const (
@@ -37,6 +38,7 @@ var (
 	lineWidthRatio = 0.15
 	paddingRatio   = getPaddingRatio()
 	discount       = paddingRatio + 0.5*lineWidthRatio
+	palette        = []color.Color{}
 )
 
 func getPaddingRatio() float64 {
@@ -50,11 +52,11 @@ func getPaddingRatio() float64 {
 func init() {
 	seed := time.Now().UnixNano()
 	rand.Seed(seed)
-}
-
-type GradientTable []struct {
-	Col colorful.Color
-	Pos float64
+	var err error
+	palette, err = gamut.Generate(lineCount+1, gamut.PastelGenerator{})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func MustParseHex(s string) colorful.Color {
@@ -152,6 +154,7 @@ func gridToImage(x, y float64) (float64, float64) {
 
 type Curve struct {
 	start, end string
+	colors     map[int]color.RGBA
 }
 
 type Stack struct {
@@ -200,6 +203,12 @@ func removeCovering(uncovered []string, covered []string) []string {
 	return newUncovered
 }
 
+func color(i int) color.RGBA {
+	r, g, b, a := palette[i].RGBA()
+
+	return color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)}
+}
+
 func buildTileStack(gx, gy int) Stack {
 	uncovered := allSides()
 	stack := Stack{}
@@ -211,9 +220,17 @@ func buildTileStack(gx, gy int) Stack {
 		start, end := uncovered[0], uncovered[1]
 		uncovered = uncovered[2:]
 		uncovered = removeCovering(uncovered, covering(start, end))
-		curve := Curve{start, end}
+		colors := map[int]color.RGBA{}
+		/*
+			for i := 0; i <= lineCount; i++ {
+				r, g, b, a := palette[i].RGBA()
+
+				colors[i] = color.RGBA{uint8(r), uint8(g), uint8(b), uint8(a)}
+			}
+		*/
+		curve := Curve{start, end, colors}
 		if start > end {
-			curve = Curve{end, start}
+			curve = Curve{end, start, colors}
 		}
 		stack.curves = append(stack.curves, curve)
 		if len(uncovered) == 0 {
@@ -249,8 +266,8 @@ func renderCachedCurve(curve Curve) *image.RGBA {
 	y := 0.0
 	if curve.start == "l" && curve.end == "r" {
 		// Horizontal
-		for i := 0.0; i <= float64(lineCount); i += 1.0 {
-			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+		for i := 0; i <= lineCount; i += 1 {
+			alpha := lerp(float64(i)/float64(lineCount), discount, 1.0-discount)
 			x, y = gridToImage(0.0, alpha)
 			gc.BeginPath()
 			gc.MoveTo(x, y)
@@ -258,14 +275,14 @@ func renderCachedCurve(curve Curve) *image.RGBA {
 			gc.LineTo(x, y)
 
 			gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
-			gc.SetStrokeColor(strokeColor)
+			gc.SetStrokeColor(curve.colors[i])
 			gc.Stroke()
 		}
 		return dest
 	} else if curve.start == "b" && curve.end == "t" {
 		// Vertical
-		for i := 0.0; i <= float64(lineCount); i += 1.0 {
-			alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+		for i := 0; i <= lineCount; i += 1 {
+			alpha := lerp(float64(i)/float64(lineCount), discount, 1.0-discount)
 			x, y = gridToImage(alpha, 0.0)
 			gc.BeginPath()
 			gc.MoveTo(x, y)
@@ -273,7 +290,7 @@ func renderCachedCurve(curve Curve) *image.RGBA {
 			gc.LineTo(x, y)
 
 			gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
-			gc.SetStrokeColor(strokeColor)
+			gc.SetStrokeColor(curve.colors[i])
 			gc.Stroke()
 		}
 		return dest
@@ -296,8 +313,8 @@ func renderCachedCurve(curve Curve) *image.RGBA {
 		gc.Fill()
 	}
 
-	for i := float64(lineCount); i >= 0.0; i -= 1.0 {
-		alpha := lerp(i/float64(lineCount), discount, 1.0-discount)
+	for i := 0; i <= lineCount; i += 1 {
+		alpha := lerp(float64(i)/float64(lineCount), discount, 1.0-discount)
 
 		if opaqueBackground {
 			gc.SetLineWidth(dotsPerGrid * (lineWidthRatio + 2*paddingRatio))
@@ -310,12 +327,31 @@ func renderCachedCurve(curve Curve) *image.RGBA {
 		draw2dkit.Circle(gc, x, y, dotsPerGrid*alpha)
 
 		gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
-		gc.SetStrokeColor(strokeColor)
+		gc.SetStrokeColor(curve.colors[i])
 		gc.Stroke()
 	}
 	return dest
 }
 
+func stackKey(x, y int) string {
+	return fmt.Sprintf("%v,%v", x, y)
+}
+
+type Position struct {
+	x, y  int
+	side  string
+	from  string
+	index int
+}
+
+func markStack(graph map[string]*Stack, position Position, color color.RGBA) {
+	stack := graph[stackKey(x, y)]
+	for _, curve := range stack.curves {
+		if curve.
+	}
+}
+
+// Fill in missing colors
 func main() {
 	alpha1 := lerp(0/float64(lineCount), discount, 1.0-discount)
 	alpha2 := lerp(1/float64(lineCount), discount, 1.0-discount)
@@ -339,13 +375,19 @@ func main() {
 	gc.Close()
 	gc.Fill()
 
-	stacks := []Stack{}
-
+	stacks := []*Stack{}
+	graph := map[string]*Stack{}
 	for y := 0; y < gridHeight; y++ {
 		for x := 0; x < gridWidth; x++ {
-			stacks = append(stacks, buildTileStack(x, y))
+			stack := buildTileStack(x, y)
+			stacks = append(stacks, &stack)
+			graph[stackKey(x, y)] = &stack
 		}
 	}
+
+	// Color a few curves
+	x, y := rand.Intn(gridWidth), rand.Intn(gridHeight)
+	markStack(graph, x, y, color(0))
 
 	cache := map[string]*image.RGBA{}
 
