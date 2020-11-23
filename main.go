@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/llgcode/draw2d"
 	"github.com/llgcode/draw2d/draw2dimg"
 	"github.com/llgcode/draw2d/draw2dkit"
 	colorful "github.com/lucasb-eyer/go-colorful"
@@ -39,7 +40,7 @@ var (
 	fillColor      = color.RGBA{0x05, 0x05, 0x04, 0xff}
 	lineWidthRatio = 0.15
 	paddingRatio   = getPaddingRatio()
-	discount       = paddingRatio + 0.5*lineWidthRatio
+	discount       = paddingRatio + lineWidthRatio
 	palette        = []color.Color{}
 )
 
@@ -124,7 +125,7 @@ func add(a, b Vector2D) Vector2D {
 }
 
 func dot(a, b Vector2D) float64 {
-	return a.x*b.y - a.y*b.x
+	return a.x*b.x + a.y*b.y
 }
 
 func normalize(a *Vector2D) {
@@ -256,7 +257,7 @@ func allSides() []string {
 	return []string{"b", "t", "l", "r"}
 }
 
-func drawCurve(gc *draw2dimg.GraphicContext, dest *image.RGBA, cache map[string]*image.RGBA, gx, gy int, curve Curve) {
+func drawCurveOld(gc *draw2dimg.GraphicContext, dest *image.RGBA, cache map[string]*image.RGBA, gx, gy int, curve Curve) {
 	curve_key := fmt.Sprintf("%v", curve)
 	img, ok := cache[curve_key]
 	if !ok {
@@ -359,16 +360,6 @@ type Position struct {
 	index int
 }
 
-/*
-func markStack(graph map[string]*Stack, position Position, color color.RGBA) {
-	stack := graph[stackKey(x, y)]
-	for _, curve := range stack.curves {
-		if curve.
-	}
-}
-
-*/
-
 type Vertex struct {
 	name            string
 	pos             Vector2D
@@ -377,6 +368,7 @@ type Vertex struct {
 }
 
 type Edge struct {
+	regionName       string
 	vertexA, vertexB *Vertex
 	color            color.Color
 }
@@ -493,9 +485,27 @@ func fixNorms(posA, normA, posB, normB Vector2D) (Vector2D, Vector2D) {
 	return normA, normB
 }
 
+func abs(f float64) float64 {
+	if f < 0 {
+		return -f
+	} else {
+		return f
+	}
+}
+func drawCurve(gc *draw2dimg.GraphicContext, x1, y1, x2, y2, x3, y3, x4, y4, lineWidth float64, color color.Color) {
+	gc.BeginPath()
+	gc.MoveTo(x1, y1)
+	gc.LineTo(x2, y2)
+	gc.LineTo(x3, y3)
+	gc.LineTo(x4, y4)
+	gc.SetLineWidth(lineWidth)
+	gc.SetStrokeColor(fillColor)
+	gc.Stroke()
+}
 func renderRegion(region *Region, edges map[string]*Edge) *image.RGBA {
 	dest := image.NewRGBA(image.Rect(0, 0, dotsPerGrid, dotsPerGrid))
 	gc := draw2dimg.NewGraphicContext(dest)
+	gc.SetLineJoin(draw2d.RoundJoin)
 	drawnEdges := map[string]bool{}
 	gc.Translate(-region.pos.x, -region.pos.y)
 	for _, vertex := range region.vertices {
@@ -510,20 +520,50 @@ func renderRegion(region *Region, edges map[string]*Edge) *image.RGBA {
 		drawnEdges[edge.name()] = true
 
 		// Render edge
-		gc.BeginPath()
-		gc.MoveTo(edge.vertexA.pos.x, edge.vertexA.pos.y)
 
 		normA, normB := fixNorms(edge.vertexA.pos, edge.vertexA.norm, edge.vertexB.pos, edge.vertexB.norm)
-		gc.CubicCurveTo(
-			edge.vertexA.pos.x+normA.x*lineWidthRatio*2.0, edge.vertexA.pos.y+normA.y*lineWidthRatio*2.0,
-			edge.vertexB.pos.x+normB.x*lineWidthRatio*2.0, edge.vertexB.pos.y+normB.y*lineWidthRatio*2.0,
-			edge.vertexB.pos.x, edge.vertexB.pos.y)
+		scaleFactor := 0.15 * (abs(edge.vertexA.pos.x-edge.vertexB.pos.x) + abs(edge.vertexA.pos.y-edge.vertexB.pos.y))
+		normA = scale(scaleFactor, normA)
+		normB = scale(scaleFactor, normB)
+
+		drawCurve(
+			gc,
+			edge.vertexA.pos.x, edge.vertexA.pos.y,
+			edge.vertexA.pos.x+normA.x, edge.vertexA.pos.y+normA.y,
+			edge.vertexB.pos.x+normB.x, edge.vertexB.pos.y+normB.y,
+			edge.vertexB.pos.x, edge.vertexB.pos.y, 1.5*lineWidthRatio*dotsPerGrid, fillColor)
+
+		drawCurve(gc,
+			edge.vertexA.pos.x, edge.vertexA.pos.y,
+			edge.vertexA.pos.x+normA.x, edge.vertexA.pos.y+normA.y,
+			edge.vertexB.pos.x+normB.x, edge.vertexB.pos.y+normB.y,
+			edge.vertexB.pos.x, edge.vertexB.pos.y, lineWidthRatio*dotsPerGrid, edge.color)
+
+		gc.BeginPath()
+		gc.MoveTo(edge.vertexA.pos.x, edge.vertexA.pos.y)
+		gc.LineTo(edge.vertexA.pos.x+normA.x, edge.vertexA.pos.y+normA.y)
+		gc.LineTo(edge.vertexB.pos.x+normB.x, edge.vertexB.pos.y+normB.y)
 		gc.LineTo(edge.vertexB.pos.x, edge.vertexB.pos.y)
 		gc.SetLineWidth(lineWidthRatio * dotsPerGrid)
 		gc.SetStrokeColor(edge.color)
 		gc.Stroke()
+
+		// Draw norms
+		drawNorm(gc, edge.vertexA.pos, normA)
+		drawNorm(gc, edge.vertexB.pos, normB)
+
 	}
 	return dest
+}
+
+func drawNorm(gc *draw2dimg.GraphicContext, pos, norm Vector2D) {
+	normalize(&norm)
+	gc.BeginPath()
+	gc.MoveTo(pos.x, pos.y)
+	gc.LineTo(pos.x+(norm.x*dotsPerGrid)/5.0, pos.y+(norm.y*dotsPerGrid)/5.0)
+	gc.SetLineWidth(0.3 * lineWidthRatio * dotsPerGrid)
+	gc.SetStrokeColor(white)
+	gc.Stroke()
 }
 
 // Fill in missing colors
@@ -622,9 +662,10 @@ func main() {
 			}
 			fmt.Printf("it looks like vertex %v does not have an edge\n", vertex.name)
 			edge := &Edge{
-				vertexA: vertex,
-				vertexB: otherVertex,
-				color:   strokeColor,
+				regionName: region.name,
+				vertexA:    vertex,
+				vertexB:    otherVertex,
+				color:      strokeColor,
 			}
 			edges[regionVertexName] = edge
 			fmt.Printf("edge(%s): %v %v\n", regionVertexName, edge.vertexA, edge.vertexB)
@@ -632,6 +673,15 @@ func main() {
 			fmt.Printf("edge(%s): %v %v\n", getRegionVertexName(region, otherVertex), edge.vertexA, edge.vertexB)
 		}
 	}
+
+	/*
+		edgeColors := map[string]bool{}
+		for _, region := range regions {
+			shuffleVertices(region.vertices)
+			for i := 0; i < len(region.vertices); i += 2 {
+			}
+		}
+	*/
 
 	for _, region := range regions {
 		regionImage := renderRegion(region, edges)
@@ -644,6 +694,7 @@ func main() {
 	SaveToJpegFile(fmt.Sprintf("truchet-%v.jpg", time.Now().Unix()), dest)
 
 }
+
 func SaveToJpegFile(filePath string, m image.Image) error {
 	// Create the file
 	f, err := os.Create(filePath)
