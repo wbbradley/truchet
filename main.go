@@ -495,9 +495,10 @@ func abs(f float64) float64 {
 func drawCurve(gc *draw2dimg.GraphicContext, x1, y1, x2, y2, x3, y3, x4, y4, lineWidth float64, color color.Color) {
 	gc.BeginPath()
 	gc.MoveTo(x1, y1)
-	gc.LineTo(x2, y2)
-	gc.LineTo(x3, y3)
-	gc.LineTo(x4, y4)
+	gc.CubicCurveTo(x2, y2, x3, y3, x4, y4)
+	// gc.LineTo(x2, y2)
+	// gc.LineTo(x3, y3)
+	// gc.LineTo(x4, y4)
 	gc.SetLineWidth(lineWidth)
 	gc.SetStrokeColor(fillColor)
 	gc.Stroke()
@@ -549,8 +550,8 @@ func renderRegion(region *Region, edges map[string]*Edge) *image.RGBA {
 		gc.Stroke()
 
 		// Draw norms
-		drawNorm(gc, edge.vertexA.pos, normA)
-		drawNorm(gc, edge.vertexB.pos, normB)
+		// drawNorm(gc, edge.vertexA.pos, normA)
+		// drawNorm(gc, edge.vertexB.pos, normB)
 
 	}
 	return dest
